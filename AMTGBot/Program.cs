@@ -38,7 +38,6 @@ namespace AMTGBot
             Console.WriteLine("Booting functional...");
 
             botClient.OnInlineQuery += OnInlineHandlerTimeout;
-            MathS.Settings.DecimalPrecisionContext.Global(new(10, ERounding.HalfUp, -10, 10, false));
 
             Console.WriteLine("Booted up.");
             botClient.StartReceiving();
@@ -47,6 +46,15 @@ namespace AMTGBot
             Console.ReadKey();
 
             botClient.StopReceiving();
+        }
+
+        private static async void SendSingleInlineQueryAnswer(string queryId, InlineQueryResultBase baseResult)
+        {
+            try
+            {
+                await botClient.AnswerInlineQueryAsync(queryId, new[] { baseResult });
+            }
+            catch { }
         }
 
         private static async Task<InlineQueryResultBase> TrySendPhoto(Stream stream, string stringFormat)
@@ -60,7 +68,7 @@ namespace AMTGBot
                     photoFileId: sendRendered.Photo[0].FileId
                 );
             }
-            catch (Exception)
+            catch
             {
                 return new InlineQueryResultArticle(
                     id: "0",
@@ -70,7 +78,7 @@ namespace AMTGBot
             }
         }
 
-        static async void OnInlineHandlerTimeout(object sender, InlineQueryEventArgs e)
+        private static async void OnInlineHandlerTimeout(object sender, InlineQueryEventArgs e)
         {
             var task = Task.Run(() => OnInlineHandler(sender, e));
             if (await Task.WhenAny(task, Task.Delay(Config.ComputationTimeLimit)) != task)
@@ -81,11 +89,11 @@ namespace AMTGBot
                     inputMessageContent: new InputTextMessageContent("Computation time exceeded: " + e.InlineQuery.Query)
                 );
 
-                await botClient.AnswerInlineQueryAsync(e.InlineQuery.Id, new[] { result });
+                SendSingleInlineQueryAnswer(e.InlineQuery.Id, result);
             }
         }
 
-        static async void OnInlineHandler(object sender, InlineQueryEventArgs e)
+        private static async void OnInlineHandler(object sender, InlineQueryEventArgs e)
         {
             InlineQueryResultBase baseResult;
             try
@@ -103,7 +111,7 @@ namespace AMTGBot
                 );
             }
 
-            await botClient.AnswerInlineQueryAsync(e.InlineQuery.Id, new[] { baseResult });
+            SendSingleInlineQueryAnswer(e.InlineQuery.Id, baseResult);
         }
     }
 }
