@@ -1,32 +1,43 @@
 ﻿using AngouriMath.Extensions;
-using CSharpMath.Rendering.FrontEnd;
 using System;
 using Telegram.Bot;
 using Telegram.Bot.Args;
-using CSharpMath.SkiaSharp;
 using System.IO;
 using Telegram.Bot.Types.InputFiles;
 using AngouriMath;
 using PeterO.Numbers;
-using SkiaSharp;
-using System.Linq;
 using Telegram.Bot.Types.InlineQueryResults;
+using Newtonsoft.Json;
+using System.Threading.Tasks;
 
 namespace AMTGBot
 {
     class Program
     {
         static ITelegramBotClient botClient;
+        public static ILatexRenderer Renderer { get; private set; }
+        public static BotConfig Config { get; private set; }
 
-        static void Main(string[] args)
+        private static void LoadConfig()
         {
+            var configPath = Environment.CurrentDirectory + Path.DirectorySeparatorChar + "config.json";
+            Config = JsonConvert.DeserializeObject<BotConfig>(File.ReadAllText(configPath));
+            Renderer = new CSharpMathRenderer();
+        }
+
+        private static void Main(string[] args)
+        {
+            Console.WriteLine("Loading config...");
+            LoadConfig();
+
             Console.WriteLine("Loading bot...");
-            botClient = new TelegramBotClient("1407004510:AAHdTLlFUWB1CByXMHu6YHnodMKCcg4PA1k");
+            botClient = new TelegramBotClient(Config.Token);
 
             var me = botClient.GetMeAsync().Result;
-            Console.WriteLine($"Authorized as {me.Username} (#{me.Id}). Booting functional.");
+            Console.WriteLine($"Authorized as {me.Username} (#{me.Id}).");
+            Console.WriteLine("Booting functional...");
 
-            botClient.OnInlineQuery += Bot_OnMessage;
+            botClient.OnInlineQuery += OnInlineHandlerTimeout;
             MathS.Settings.DecimalPrecisionContext.Global(new(10, ERounding.HalfUp, -10, 10, false));
 
             Console.WriteLine("Booted up.");
@@ -38,80 +49,61 @@ namespace AMTGBot
             botClient.StopReceiving();
         }
 
-        static void WriteToFile(Stream stream, string destinationfile, bool append = true, int bufferSize = 4096)
+        private static async Task<InlineQueryResultBase> TrySendPhoto(Stream stream, string stringFormat)
         {
-            using (var destinationFileStream = new FileStream(destinationfile, FileMode.OpenOrCreate))
+            var telegramFile = new InputOnlineFile(stream);
+            try
             {
-                while (stream.Position < stream.Length)
-                {
-                    destinationFileStream.WriteByte((byte)stream.ReadByte());
-                }
+                var sendRendered = await botClient.SendPhotoAsync(Config.PhotoStorageChatId, telegramFile);
+                return new InlineQueryResultCachedPhoto(
+                    id: "0",
+                    photoFileId: sendRendered.Photo[0].FileId
+                );
+            }
+            catch (Exception)
+            {
+                return new InlineQueryResultArticle(
+                    id: "0",
+                    title: "String result (cannot render to image)",
+                    inputMessageContent: new InputTextMessageContent(stringFormat)
+                );
             }
         }
 
-        static async void Bot_OnMessage(object sender, InlineQueryEventArgs e)
+        static async void OnInlineHandlerTimeout(object sender, InlineQueryEventArgs e)
         {
-            try
+            var task = Task.Run(() => OnInlineHandler(sender, e));
+            if (await Task.WhenAny(task, Task.Delay(Config.ComputationTimeLimit)) != task)
             {
-                var calculated = e.InlineQuery.Query.Solve("x");
-                var path = System.IO.Path.GetTempFileName();
-                var painter = new MathPainter { LaTeX = calculated.Simplify().Latexise() };
-
-                var measures = painter.Measure();
-                int border = 50;
-
-                SKBitmap bitMap = new SKBitmap(
-                    width: ((int)measures.Width) + 2 * border,
-                    height: ((int)measures.Height) + 2 * border
+                var result = new InlineQueryResultArticle(
+                    id: "0",
+                    title: "Computation time exceeded",
+                    inputMessageContent: new InputTextMessageContent("Computation time exceeded: " + e.InlineQuery.Query)
                 );
 
-                var canvas = new SKCanvas(bitMap);
+                await botClient.AnswerInlineQueryAsync(e.InlineQuery.Id, new[] { result });
+            }
+        }
 
-                painter.Draw(canvas, new SKPoint(border, measures.Height / 2.0f + border));
-                canvas.Flush();
-
-                using (var image = SKImage.FromBitmap(bitMap))
-                using (var data = image.Encode(SKEncodedImageFormat.Png, 100))
-                {
-                    // save the data to a stream
-                    using (var streamf = File.OpenWrite(path))
-                    {
-                        data.SaveTo(streamf);
-                    }
-                }
-                Console.WriteLine(path);
-
-
-                using var stream = File.Open(path, FileMode.Open);
-                var telegramFile = new InputOnlineFile(stream);
-
-                var result = await botClient.SendPhotoAsync(-480623756, telegramFile);
-
-                try
-                {
-                    var res = new InlineQueryResultCachedPhoto("0", result.Photo[0].FileId);
-                    await botClient.AnswerInlineQueryAsync(e.InlineQuery.Id, new[] { res });
-                }
-                catch (Exception ignored)
-                {
-                    var res = new InlineQueryResultArticle("0", "String result (cannot Latexise to image)", new InputTextMessageContent(calculated.Stringize()));
-                    await botClient.AnswerInlineQueryAsync(e.InlineQuery.Id, new[] { res });
-                }
-
-                stream.Close();
-
-                File.Delete(path);
-
+        static async void OnInlineHandler(object sender, InlineQueryEventArgs e)
+        {
+            InlineQueryResultBase baseResult;
+            try
+            {
+                var calculated = e.InlineQuery.Query.Solve("x").Simplify();
+                using var stream = Renderer.Render(calculated.Latexise());
+                baseResult = await TrySendPhoto(stream, calculated.Stringize());
             }
             catch (Exception ex)
             {
-                var res = new InlineQueryResultArticle("0", "Error handling request", new InputTextMessageContent(ex.Message));
-                try
-                {
-                    await botClient.AnswerInlineQueryAsync(e.InlineQuery.Id, new[] { res });
-                }
-                catch (Exception ee) { }
+                baseResult = new InlineQueryResultArticle(
+                    id: "0",
+                    title: ex.Message,
+                    inputMessageContent: new InputTextMessageContent(ex.Message)
+                );
             }
+
+            await botClient.AnswerInlineQueryAsync(e.InlineQuery.Id, new[] { baseResult });
         }
     }
 }
