@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net5.0</TargetFramework>
+    <StartupObject>AMTGBot.Program</StartupObject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="AngouriMath" Version="1.2.0-preview.4" />
+    <PackageReference Include="CSharpMath.Rendering" Version="0.5.0-beta" />
+    <PackageReference Include="CSharpMath.SkiaSharp" Version="0.5.0-beta" />
+    <PackageReference Include="Telegram.Bot" Version="15.7.1" />
+  </ItemGroup>
+
+</Project>
