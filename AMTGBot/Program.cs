@@ -4,8 +4,6 @@ using Telegram.Bot;
 using Telegram.Bot.Args;
 using System.IO;
 using Telegram.Bot.Types.InputFiles;
-using AngouriMath;
-using PeterO.Numbers;
 using Telegram.Bot.Types.InlineQueryResults;
 using Newtonsoft.Json;
 using System.Threading.Tasks;
