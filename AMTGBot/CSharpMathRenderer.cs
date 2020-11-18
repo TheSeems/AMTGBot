@@ -4,7 +4,7 @@ using System.IO;
 
 namespace AMTGBot
 {
-    class CSharpMathRenderer : ILatexRenderer
+    internal sealed class CSharpMathRenderer : ILatexRenderer
     {
         const int LatexBorder = 50;
 

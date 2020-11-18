@@ -2,7 +2,7 @@
 
 namespace AMTGBot
 {
-    interface ILatexRenderer
+    public interface ILatexRenderer
     {
         Stream Render(string latex);
     }

@@ -7,29 +7,28 @@ using Telegram.Bot.Types.InputFiles;
 using Telegram.Bot.Types.InlineQueryResults;
 using Newtonsoft.Json;
 using System.Threading.Tasks;
+using AngouriMath;
 
 namespace AMTGBot
 {
-    class Program
+    internal sealed class Program
     {
-        static ITelegramBotClient botClient;
-        public static ILatexRenderer Renderer { get; private set; }
-        public static BotConfig Config { get; private set; }
+        private static AMTGBot bot;
 
-        private static void LoadConfig()
+        private static BotConfig LoadConfig()
         {
             var configPath = Environment.CurrentDirectory + Path.DirectorySeparatorChar + "config.json";
-            Config = JsonConvert.DeserializeObject<BotConfig>(File.ReadAllText(configPath));
-            Renderer = new CSharpMathRenderer();
+            return JsonConvert.DeserializeObject<BotConfig>(File.ReadAllText(configPath));
         }
 
         private static void Main(string[] args)
         {
             Console.WriteLine("Loading config...");
-            LoadConfig();
+            var botConfig = LoadConfig();
 
             Console.WriteLine("Loading bot...");
-            botClient = new TelegramBotClient(Config.Token);
+            var botClient = new TelegramBotClient(botConfig.Token);
+            bot = new(botClient, botConfig, new CSharpMathRenderer());
 
             var me = botClient.GetMeAsync().Result;
             Console.WriteLine($"Authorized as {me.Username} (#{me.Id}).");
@@ -46,48 +45,18 @@ namespace AMTGBot
             botClient.StopReceiving();
         }
 
-        private static async void SendSingleInlineQueryAnswer(string queryId, InlineQueryResultBase baseResult)
-        {
-            try
-            {
-                await botClient.AnswerInlineQueryAsync(queryId, new[] { baseResult });
-            }
-            catch { }
-        }
-
-        private static async Task<InlineQueryResultBase> TrySendPhoto(Stream stream, string stringFormat)
-        {
-            var telegramFile = new InputOnlineFile(stream);
-            try
-            {
-                var sendRendered = await botClient.SendPhotoAsync(Config.PhotoStorageChatId, telegramFile);
-                return new InlineQueryResultCachedPhoto(
-                    id: "0",
-                    photoFileId: sendRendered.Photo[0].FileId
-                );
-            }
-            catch
-            {
-                return new InlineQueryResultArticle(
-                    id: "0",
-                    title: "String result (cannot render to image)",
-                    inputMessageContent: new InputTextMessageContent(stringFormat)
-                );
-            }
-        }
-
         private static async void OnInlineHandlerTimeout(object sender, InlineQueryEventArgs e)
         {
             var task = Task.Run(() => OnInlineHandler(sender, e));
-            if (await Task.WhenAny(task, Task.Delay(Config.ComputationTimeLimit)) != task)
+            if (await Task.WhenAny(task, Task.Delay(bot.BotConfig.ComputationTimeLimit)) != task)
             {
-                var result = new InlineQueryResultArticle(
+                InlineQueryResultArticle result = new(
                     id: "0",
                     title: "Computation time exceeded",
                     inputMessageContent: new InputTextMessageContent("Computation time exceeded: " + e.InlineQuery.Query)
                 );
 
-                SendSingleInlineQueryAnswer(e.InlineQuery.Id, result);
+                bot.SendSingleInlineQueryAnswer(e.InlineQuery.Id, result);
             }
         }
 
@@ -96,20 +65,24 @@ namespace AMTGBot
             InlineQueryResultBase baseResult;
             try
             {
-                var calculated = e.InlineQuery.Query.Solve("x").Simplify();
-                using var stream = Renderer.Render(calculated.Latexise());
-                baseResult = await TrySendPhoto(stream, calculated.Stringize());
+                Entity calculated = e.InlineQuery.Query.Solve("x");
+                if (calculated.Complexity < bot.BotConfig.SimplifyComplexityThreshold) 
+                    calculated = calculated.Simplify();
+
+                using var stream = bot.LatexRenderer.Render(@"Input: " + e.InlineQuery.Query.Latexise() + @"\\\\" + calculated.Latexise());
+                baseResult = await bot.TrySendPhoto(stream, e.InlineQuery.Query, calculated.Stringize());
             }
             catch (Exception ex)
             {
                 baseResult = new InlineQueryResultArticle(
                     id: "0",
-                    title: ex.Message,
-                    inputMessageContent: new InputTextMessageContent(ex.Message)
-                );
+                    title: "We can't process your request.",
+                    inputMessageContent: new InputTextMessageContent(ex.Message + ": " + e.InlineQuery.Query)
+                )
+                { Description = ex.Message };
             }
 
-            SendSingleInlineQueryAnswer(e.InlineQuery.Id, baseResult);
+            bot.SendSingleInlineQueryAnswer(e.InlineQuery.Id, baseResult);
         }
     }
 }
