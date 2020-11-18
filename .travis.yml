@@ -1,8 +1,5 @@
 language: csharp
-solution: AMTGBot.sln
-
-jobs:
-  include:
-    - dotnet: 5.0
-      mono: none
-    - mono: latest
+mono: none
+dotnet: 5.0
+script:
+ - dotnet build
