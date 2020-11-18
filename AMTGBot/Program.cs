@@ -13,7 +13,7 @@ namespace AMTGBot
 {
     internal sealed class Program
     {
-        private static AMTGBot bot;
+        private static Bot bot;
 
         private static BotConfig LoadConfig()
         {
