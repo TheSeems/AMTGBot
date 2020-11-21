@@ -3,7 +3,6 @@ using System;
 using Telegram.Bot;
 using Telegram.Bot.Args;
 using System.IO;
-using Telegram.Bot.Types.InputFiles;
 using Telegram.Bot.Types.InlineQueryResults;
 using Newtonsoft.Json;
 using System.Threading.Tasks;
@@ -57,6 +56,7 @@ namespace AMTGBot
                 );
 
                 bot.SendSingleInlineQueryAnswer(e.InlineQuery.Id, result);
+                bot.Logger.Info($"Computation time exceeded for query '{e.InlineQuery.Query}'");
             }
         }
 
@@ -66,7 +66,7 @@ namespace AMTGBot
             try
             {
                 Entity calculated = e.InlineQuery.Query.Solve("x");
-                if (calculated.Complexity < bot.BotConfig.SimplifyComplexityThreshold) 
+                if (calculated.Complexity < bot.BotConfig.SimplifyComplexityThreshold)
                     calculated = calculated.Simplify();
 
                 using var stream = bot.LatexRenderer.Render(@"Input: " + e.InlineQuery.Query.Latexise() + @"\\\\" + calculated.Latexise());
@@ -80,6 +80,8 @@ namespace AMTGBot
                     inputMessageContent: new InputTextMessageContent(ex.Message + ": " + e.InlineQuery.Query)
                 )
                 { Description = ex.Message };
+
+                bot.Logger.Info(ex, $"Can't evaluate query {e.InlineQuery.Query}: {ex.Message}");
             }
 
             bot.SendSingleInlineQueryAnswer(e.InlineQuery.Id, baseResult);
