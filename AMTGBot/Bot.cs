@@ -14,16 +14,14 @@ namespace AMTGBot
         public ITelegramBotClient BotClient { get; }
         public BotConfig BotConfig { get; }
         public ILatexRenderer LatexRenderer { get; }
-        public Logger Logger { get; private set; }
+        public ILogger Logger { get; }
 
-        public Bot(ITelegramBotClient botClient, BotConfig botConfig, ILatexRenderer latexRenderer)
+        public Bot(ITelegramBotClient botClient, BotConfig botConfig, ILatexRenderer latexRenderer, ILogger logger)
         {
             BotClient = botClient;
             BotConfig = botConfig;
             LatexRenderer = latexRenderer;
-
-            Logger = LogManager.GetCurrentClassLogger();
-            LogManager.Configuration = new XmlLoggingConfiguration("NLog.config");
+            Logger = logger;
         }
 
         public async void SendSingleInlineQueryAnswer(string queryId, InlineQueryResultBase baseResult)
@@ -32,9 +30,9 @@ namespace AMTGBot
             {
                 await BotClient.AnswerInlineQueryAsync(queryId, new[] { baseResult });
             }
-            catch (Exception e)
+            catch (Telegram.Bot.Exceptions.BadRequestException e)
             {
-                Logger.Warn(e, "Can't send single inline query answer: " + e.Message);
+                Logger.Warn(e, "Can't send single inline query answer");
             }
         }
 
