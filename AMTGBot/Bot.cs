@@ -1,4 +1,7 @@
-﻿using System.IO;
+﻿using NLog;
+using NLog.Config;
+using System;
+using System.IO;
 using System.Threading.Tasks;
 using Telegram.Bot;
 using Telegram.Bot.Types.InlineQueryResults;
@@ -11,12 +14,14 @@ namespace AMTGBot
         public ITelegramBotClient BotClient { get; }
         public BotConfig BotConfig { get; }
         public ILatexRenderer LatexRenderer { get; }
+        public ILogger Logger { get; }
 
-        public Bot(ITelegramBotClient botClient, BotConfig botConfig, ILatexRenderer latexRenderer)
+        public Bot(ITelegramBotClient botClient, BotConfig botConfig, ILatexRenderer latexRenderer, ILogger logger)
         {
             BotClient = botClient;
             BotConfig = botConfig;
             LatexRenderer = latexRenderer;
+            Logger = logger;
         }
 
         public async void SendSingleInlineQueryAnswer(string queryId, InlineQueryResultBase baseResult)
@@ -25,7 +30,10 @@ namespace AMTGBot
             {
                 await BotClient.AnswerInlineQueryAsync(queryId, new[] { baseResult });
             }
-            catch { }
+            catch (Telegram.Bot.Exceptions.BadRequestException e)
+            {
+                Logger.Warn(e, "Can't send single inline query answer");
+            }
         }
 
         public async Task<InlineQueryResultBase> TrySendPhoto(Stream stream, string input, string stringFormat)
